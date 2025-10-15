@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/brij-812/url-shortener/internal/handler"
+	"github.com/brij-812/url-shortener/internal/handlers"
 	"github.com/brij-812/url-shortener/internal/repository"
 	"github.com/brij-812/url-shortener/internal/routes"
 	"github.com/go-chi/chi/v5"
@@ -12,7 +12,7 @@ import (
 
 func main() {
 	repo := repository.NewMemoryRepo()
-	handler := handler.NewURLHandler(repo)
+	handler := handlers.NewURLHandler(repo)
 
 	r := chi.NewRouter()
 	routes.RegisterRoutes(r, handler)

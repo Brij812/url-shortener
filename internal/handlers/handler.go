@@ -1,4 +1,4 @@
-package handler
+package handlers
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"github.com/brij-812/url-shortener/internal/models"
 	"github.com/brij-812/url-shortener/internal/repository"
 	"github.com/brij-812/url-shortener/internal/utils"
+	"github.com/go-chi/chi/v5"
 )
 
 type URLHandler struct {
@@ -43,4 +44,20 @@ func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		ShortURL: "http://localhost:8080/" + code,
 	}
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		http.Error(w, "code missing", http.StatusBadRequest)
+		return
+	}
+
+	url, exists := h.Repo.GetURL(code)
+	if !exists {
+		http.Error(w, "short URL not found", http.StatusNotFound)
+		return
+	}
+
+	http.Redirect(w, r, url, http.StatusFound)
 }
