@@ -12,5 +12,6 @@ func RegisterRoutes(r chi.Router, h *handlers.URLHandler) {
 		w.Write([]byte("OK"))
 	})
 	r.Post("/shorten", h.ShortenURL)
-	r.Get("/{code}", h.RedirectURL) //
+	r.Get("/metrics", h.GetMetrics)
+	r.Get("/{code}", h.RedirectURL)
 }
