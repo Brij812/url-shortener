@@ -11,7 +11,7 @@ A simple URL shortener service written in Go. It allows you to shorten URLs, red
 * Docker-ready
 
 ## Project Structure
-
+```bash
 url-shortener/
 ├── cmd/
 │   └── server/
@@ -24,7 +24,7 @@ url-shortener/
 ├── Dockerfile
 ├── go.mod
 └── README.md
-
+```
 ## Local Setup
 
 Clone the repo:
