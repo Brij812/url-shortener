@@ -1,0 +1,31 @@
+# Go build artifacts
+/bin/
+/obj/
+/out/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go test cache
+*.test
+*.test.exe
+*.coverprofile
+*.out
+
+# Go modules
+/go.mod
+/go.sum
+
+# Editor/IDE files
+*.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+
+# Logs
+*.log
+
+# Docker
+*.dockerignore
