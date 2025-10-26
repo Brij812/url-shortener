@@ -13,10 +13,10 @@ import (
 )
 
 type URLHandler struct {
-	Repo *repository.MemoryRepo
+	Repo repository.Repository // now uses the interface, not MemoryRepo
 }
 
-func NewURLHandler(repo *repository.MemoryRepo) *URLHandler {
+func NewURLHandler(repo repository.Repository) *URLHandler {
 	return &URLHandler{Repo: repo}
 }
 
@@ -42,6 +42,7 @@ func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url field required", http.StatusBadRequest)
 		return
 	}
+
 	req.URL = normalizeURL(req.URL)
 
 	code, exists := h.Repo.GetCode(req.URL)
@@ -64,13 +65,13 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, exists := h.Repo.GetURL(code)
+	longURL, exists := h.Repo.GetURL(code)
 	if !exists {
 		http.Error(w, "short URL not found", http.StatusNotFound)
 		return
 	}
 
-	http.Redirect(w, r, url, http.StatusFound)
+	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
 func (h *URLHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {

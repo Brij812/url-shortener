@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS domain_counts;
+DROP TABLE IF EXISTS links;

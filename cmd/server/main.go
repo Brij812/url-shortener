@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 
+	"github.com/brij-812/url-shortener/internal/config"
+	"github.com/brij-812/url-shortener/internal/database"
 	"github.com/brij-812/url-shortener/internal/handlers"
 	"github.com/brij-812/url-shortener/internal/repository"
 	"github.com/brij-812/url-shortener/internal/routes"
@@ -11,14 +14,25 @@ import (
 )
 
 func main() {
-	repo := repository.NewMemoryRepo()
+	cfg := config.LoadConfig()
+
+	db := database.NewPostgresDB(cfg)
+	defer db.Close()
+
+	migrateFlag := flag.String("migrate", "", "Run DB migrations: up, down, or version")
+	flag.Parse()
+
+	if *migrateFlag != "" {
+		database.RunMigrations(db, cfg, *migrateFlag)
+		return
+	}
+
+	repo := repository.NewPostgresRepo(db)
 	handler := handlers.NewURLHandler(repo)
 
 	r := chi.NewRouter()
 	routes.RegisterRoutes(r, handler)
 
-	log.Println("Server started at :8080")
-	if err := http.ListenAndServe(":8080", r); err != nil {
-		log.Fatalf("server error: %v", err)
-	}
+	log.Printf("🚀 Server running on port %s\n", cfg.Server.Port)
+	http.ListenAndServe(":"+cfg.Server.Port, r)
 }
