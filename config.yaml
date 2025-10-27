@@ -5,10 +5,10 @@ database:
   host: "localhost"
   port: "5432"
   user: "shorty_user"
-  password: "shorty_pass"
+  password: "Brij@8123"
   name: "shorty"
   sslmode: "disable"
-  
+
 redis:
   host: "localhost"
   port: "6379"

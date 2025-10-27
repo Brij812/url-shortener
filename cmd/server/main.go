@@ -14,25 +14,38 @@ import (
 )
 
 func main() {
+	// Load configuration
 	cfg := config.LoadConfig()
 
+	// Connect to Postgres
 	db := database.NewPostgresDB(cfg)
 	defer db.Close()
 
+	log.Println("✅ Connected to Postgres successfully")
+
+	// Parse migration flag
 	migrateFlag := flag.String("migrate", "", "Run DB migrations: up, down, or version")
 	flag.Parse()
 
+	// Handle migrations
 	if *migrateFlag != "" {
 		database.RunMigrations(db, cfg, *migrateFlag)
 		return
 	}
 
+	// Initialize handlers
 	repo := repository.NewPostgresRepo(db)
-	handler := handlers.NewURLHandler(repo)
+	urlHandler := handlers.NewURLHandler(repo)
+	userHandler := handlers.NewUserHandler(db)
 
+	// Setup router
 	r := chi.NewRouter()
-	routes.RegisterRoutes(r, handler)
+	routes.RegisterRoutes(r, urlHandler)
+	routes.RegisterUserRoutes(r, userHandler)
 
-	log.Printf("🚀 Server running on port %s\n", cfg.Server.Port)
-	http.ListenAndServe(":"+cfg.Server.Port, r)
+	// Start server
+	log.Printf("🚀 Server running on port %s", cfg.Server.Port)
+	if err := http.ListenAndServe(":"+cfg.Server.Port, r); err != nil {
+		log.Fatalf("❌ Server failed: %v", err)
+	}
 }
