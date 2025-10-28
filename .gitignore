@@ -1,31 +1,68 @@
-# Go build artifacts
-/bin/
-/obj/
-/out/
+# === Go Build & Cache Files ===
+bin/
+build/
+dist/
 *.exe
 *.dll
 *.so
 *.dylib
-
-# Go test cache
 *.test
-*.test.exe
-*.coverprofile
 *.out
+*.log
 
-# Go modules
-/go.mod
-/go.sum
+# === Go Modules Cache ===
+vendor/
+go.sum
+*.mod~
 
-# Editor/IDE files
-*.vscode/
+# === Config & Environment Files ===
+.env
+.env.*
+config.yaml
+config/config.yaml
+
+# === Database Artifacts ===
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+dump.sql
+
+# === IDE / Editor ===
+.vscode/
 .idea/
 *.swp
 *.swo
-*.DS_Store
 
-# Logs
+# === OS / Misc ===
+.DS_Store
+Thumbs.db
+
+# === Temporary / Generated ===
+tmp/
+temp/
+*.tmp
+*.cache
 *.log
+*.pid
 
-# Docker
-*.dockerignore
+# === Dependency Tools ===
+migrations/*.lock
+*.migrate
+*.log.*
+
+# === Binary outputs ===
+main
+url-shortener
+cmd/server/main
+cmd/server/server
+
+# === Node / Frontend (if you add a UI later) ===
+node_modules/
+npm-debug.log
+yarn-error.log
+*.tsbuildinfo
+
+# === Docker & Build Context ===
+docker-compose.override.yml
+*.tar
