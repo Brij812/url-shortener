@@ -5,19 +5,19 @@ database:
   host: "localhost"
   port: "5432"
   user: "shorty_user"
-  password: "Brij@8123"
+  password: "Brij@8123"   # <- set your real password
   name: "shorty"
-  sslmode: "disable"
+  sslmode: "disable"      # local dev on Windows/macOS usually uses disable
 
 redis:
   host: "localhost"
   port: "6379"
-  password: ""
+  password: ""            # leave empty if no password
   db: 0
   pool_size: 10
 
 jwt:
-  secret: "supersecretkey"   
+  secret: "supersecretkey_change_me"  # move to ENV in prod
   issuer: "url-shortener"
-  access_token_expiry_minutes: 15
-  refresh_token_expiry_hours: 72
+  access_token_expiry_minutes: 60     # 1 hour access token
+  refresh_token_expiry_hours: 168     # 7 days (if/when you add refresh tokens)

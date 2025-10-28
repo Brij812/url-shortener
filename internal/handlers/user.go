@@ -11,14 +11,20 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("supersecretkey")
-
 type UserHandler struct {
-	DB *sql.DB
+	DB                   *sql.DB
+	JWTSecret            []byte
+	JWTIssuer            string
+	AccessTokenExpiryMin int
 }
 
-func NewUserHandler(db *sql.DB) *UserHandler {
-	return &UserHandler{DB: db}
+func NewUserHandler(db *sql.DB, secret, issuer string, accessExpiry int) *UserHandler {
+	return &UserHandler{
+		DB:                   db,
+		JWTSecret:            []byte(secret),
+		JWTIssuer:            issuer,
+		AccessTokenExpiryMin: accessExpiry,
+	}
 }
 
 // POST /signup
@@ -70,12 +76,14 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(),
-	})
+		"iss":     h.JWTIssuer,
+		"exp":     time.Now().Add(time.Duration(h.AccessTokenExpiryMin) * time.Minute).Unix(),
+	}
 
-	tokenString, err := token.SignedString(jwtSecret)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(h.JWTSecret)
 	if err != nil {
 		http.Error(w, "failed to create token", http.StatusInternalServerError)
 		return

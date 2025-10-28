@@ -2,72 +2,67 @@ package repository
 
 import (
 	"net/url"
-	"sort"
 	"sync"
+	"time"
 )
 
 type MemoryRepo struct {
-	URLToCode   map[string]string
-	CodeToURL   map[string]string
-	DomainCount map[string]int
-	mu          sync.RWMutex
+	mu           sync.RWMutex
+	urlToCode    map[string]string
+	codeToURL    map[string]string
+	domainCounts map[string]int
+	userLinks    map[int][]map[string]string
 }
 
 func NewMemoryRepo() *MemoryRepo {
 	return &MemoryRepo{
-		URLToCode:   make(map[string]string),
-		CodeToURL:   make(map[string]string),
-		DomainCount: make(map[string]int),
+		urlToCode:    make(map[string]string),
+		codeToURL:    make(map[string]string),
+		domainCounts: make(map[string]int),
+		userLinks:    make(map[int][]map[string]string),
+	}
+}
+
+// Save a URL–code pair associated with a user
+func (r *MemoryRepo) Save(u, code string, userID int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.urlToCode[u] = code
+	r.codeToURL[code] = u
+
+	// Track per-user links
+	r.userLinks[userID] = append(r.userLinks[userID], map[string]string{
+		"short_url":  "http://localhost:8080/" + code,
+		"long_url":   u,
+		"created_at": time.Now().Format(time.RFC3339),
+	})
+
+	// Increment domain count
+	d, err := url.Parse(u)
+	if err == nil && d.Host != "" {
+		r.domainCounts[d.Host]++
 	}
 }
 
 func (r *MemoryRepo) GetCode(u string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	c, ok := r.URLToCode[u]
-	return c, ok
+	code, ok := r.urlToCode[u]
+	return code, ok
 }
 
 func (r *MemoryRepo) GetURL(code string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	u, ok := r.CodeToURL[code]
+	u, ok := r.codeToURL[code]
 	return u, ok
-}
-
-func (r *MemoryRepo) Save(u, code string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.URLToCode[u] = code
-	r.CodeToURL[code] = u
-	d, err := url.Parse(u)
-	if err == nil && d.Host != "" {
-		r.DomainCount[d.Host] = r.DomainCount[d.Host] + 1
-	}
 }
 
 func (r *MemoryRepo) GetTopDomains(n int) map[string]int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	type kv struct {
-		Key   string
-		Value int
-	}
-	var arr []kv
-	for k, v := range r.DomainCount {
-		arr = append(arr, kv{k, v})
-	}
-	sort.Slice(arr, func(i, j int) bool {
-		return arr[i].Value > arr[j].Value
-	})
-	if len(arr) > n {
-		arr = arr[:n]
-	}
-	out := make(map[string]int)
-	for _, kv := range arr {
-		out[kv.Key] = kv.Value
-	}
-	return out
+	return r.domainCounts
 }
 
 func (r *MemoryRepo) IncrementDomainCount(u string) {
@@ -75,6 +70,13 @@ func (r *MemoryRepo) IncrementDomainCount(u string) {
 	defer r.mu.Unlock()
 	d, err := url.Parse(u)
 	if err == nil && d.Host != "" {
-		r.DomainCount[d.Host]++
+		r.domainCounts[d.Host]++
 	}
+}
+
+// new method added — satisfies Repository interface
+func (r *MemoryRepo) GetAllURLsByUser(userID int) []map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.userLinks[userID]
 }

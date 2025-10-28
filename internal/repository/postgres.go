@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/url"
@@ -17,13 +18,13 @@ func NewPostgresRepo(db *sql.DB) *PostgresRepo {
 	return &PostgresRepo{db: db}
 }
 
-// Save inserts a new URL–code pair (or updates if it already exists)
-func (r *PostgresRepo) Save(u, code string) {
-	_, err := r.db.Exec(`
-		INSERT INTO links (code, long_url, created_at)
-		VALUES ($1, $2, $3)
+// Save inserts a new URL–code pair associated with a user.
+func (r *PostgresRepo) Save(u, code string, userID int) {
+	_, err := r.db.ExecContext(context.Background(), `
+		INSERT INTO links (code, long_url, user_id, created_at)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (code) DO NOTHING
-	`, code, u, time.Now())
+	`, code, u, userID, time.Now())
 	if err != nil {
 		log.Printf("❌ Failed to save URL: %v", err)
 		return
@@ -32,7 +33,7 @@ func (r *PostgresRepo) Save(u, code string) {
 	// Increment domain count
 	d, err := url.Parse(u)
 	if err == nil && d.Host != "" {
-		_, err = r.db.Exec(`
+		_, err = r.db.ExecContext(context.Background(), `
 			INSERT INTO domain_counts (domain, count)
 			VALUES ($1, 1)
 			ON CONFLICT (domain)
@@ -58,7 +59,7 @@ func (r *PostgresRepo) GetCode(u string) (string, bool) {
 	return code, true
 }
 
-// GetURL finds the original long URL for a given code
+// GetURL finds the original long URL for a given code (public)
 func (r *PostgresRepo) GetURL(code string) (string, bool) {
 	var u string
 	err := r.db.QueryRow(`SELECT long_url FROM links WHERE code=$1`, code).Scan(&u)
@@ -85,22 +86,13 @@ func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
 	}
 	defer rows.Close()
 
-	type kv struct {
-		Key   string
-		Value int
-	}
-	var arr []kv
+	out := make(map[string]int)
 	for rows.Next() {
 		var domain string
 		var count int
 		if err := rows.Scan(&domain, &count); err == nil {
-			arr = append(arr, kv{domain, count})
+			out[domain] = count
 		}
-	}
-
-	out := make(map[string]int)
-	for _, kv := range arr {
-		out[kv.Key] = kv.Value
 	}
 	return out
 }
@@ -120,4 +112,33 @@ func (r *PostgresRepo) IncrementDomainCount(u string) {
 	if err != nil {
 		log.Printf("❌ IncrementDomainCount error: %v", err)
 	}
+}
+
+// GetAllURLsByUser returns all shortened URLs for a given user
+func (r *PostgresRepo) GetAllURLsByUser(userID int) []map[string]string {
+	rows, err := r.db.Query(`
+		SELECT code, long_url, created_at
+		FROM links
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		log.Printf("❌ GetAllURLsByUser error: %v", err)
+		return nil
+	}
+	defer rows.Close()
+
+	var results []map[string]string
+	for rows.Next() {
+		var code, longURL string
+		var createdAt time.Time
+		if err := rows.Scan(&code, &longURL, &createdAt); err == nil {
+			results = append(results, map[string]string{
+				"short_url":  "http://localhost:8080/" + code,
+				"long_url":   longURL,
+				"created_at": createdAt.Format(time.RFC3339),
+			})
+		}
+	}
+	return results
 }

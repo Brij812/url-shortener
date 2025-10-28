@@ -13,7 +13,7 @@ import (
 )
 
 type URLHandler struct {
-	Repo repository.Repository // now uses the interface, not MemoryRepo
+	Repo repository.Repository
 }
 
 func NewURLHandler(repo repository.Repository) *URLHandler {
@@ -32,6 +32,7 @@ func normalizeURL(raw string) string {
 	return u.String()
 }
 
+// 🔹 Shorten a new URL (Protected)
 func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	var req models.ShortenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -48,33 +49,62 @@ func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	code, exists := h.Repo.GetCode(req.URL)
 	if !exists {
 		code = utils.GenerateShortCode(req.URL)
-		h.Repo.Save(req.URL, code)
+		// ✅ get user ID from JWT context
+		userID, ok := r.Context().Value("user_id").(int)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.Repo.Save(req.URL, code, userID)
 	} else {
 		h.Repo.IncrementDomainCount(req.URL)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.ShortenResponse{
 		ShortURL: "http://localhost:8080/" + code,
 	})
 }
 
+// 🔹 Redirect (Public)
 func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
-	code := chi.URLParam(r, "code")
-	if code == "" {
-		http.Error(w, "code missing", http.StatusBadRequest)
+	shortCode := chi.URLParam(r, "shortCode")
+	if shortCode == "" {
+		http.Error(w, "short code missing", http.StatusBadRequest)
 		return
 	}
 
-	longURL, exists := h.Repo.GetURL(code)
+	longURL, exists := h.Repo.GetURL(shortCode)
 	if !exists {
 		http.Error(w, "short URL not found", http.StatusNotFound)
 		return
 	}
 
-	http.Redirect(w, r, longURL, http.StatusFound)
+	http.Redirect(w, r, longURL, http.StatusFound) // 302 redirect
 }
 
+// 🔹 Metrics (Protected)
 func (h *URLHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	data := h.Repo.GetTopDomains(3)
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
+}
+
+// 🔹 Get all URLs created by the current user (Protected)
+func (h *URLHandler) GetAllUserURLs(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	urls := h.Repo.GetAllURLsByUser(userID)
+	w.Header().Set("Content-Type", "application/json")
+
+	if len(urls) == 0 {
+		json.NewEncoder(w).Encode([]string{})
+		return
+	}
+
+	json.NewEncoder(w).Encode(urls)
 }

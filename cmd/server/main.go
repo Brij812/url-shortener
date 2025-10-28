@@ -8,40 +8,47 @@ import (
 	"github.com/brij-812/url-shortener/internal/config"
 	"github.com/brij-812/url-shortener/internal/database"
 	"github.com/brij-812/url-shortener/internal/handlers"
+	"github.com/brij-812/url-shortener/internal/middleware"
 	"github.com/brij-812/url-shortener/internal/repository"
 	"github.com/brij-812/url-shortener/internal/routes"
 	"github.com/go-chi/chi/v5"
 )
 
 func main() {
-	// Load configuration
+	// Load config.yaml + env
 	cfg := config.LoadConfig()
 
 	// Connect to Postgres
 	db := database.NewPostgresDB(cfg)
 	defer db.Close()
-
 	log.Println("✅ Connected to Postgres successfully")
 
-	// Parse migration flag
+	// Handle migrations
 	migrateFlag := flag.String("migrate", "", "Run DB migrations: up, down, or version")
 	flag.Parse()
-
-	// Handle migrations
 	if *migrateFlag != "" {
 		database.RunMigrations(db, cfg, *migrateFlag)
 		return
 	}
 
-	// Initialize handlers
+	// Initialize repo and handlers
 	repo := repository.NewPostgresRepo(db)
 	urlHandler := handlers.NewURLHandler(repo)
-	userHandler := handlers.NewUserHandler(db)
+	userHandler := handlers.NewUserHandler(
+		db,
+		cfg.JWT.Secret,
+		cfg.JWT.Issuer,
+		cfg.JWT.AccessTokenExpiryMinutes,
+	)
 
-	// Setup router
+	// Initialize router
 	r := chi.NewRouter()
-	routes.RegisterRoutes(r, urlHandler)
-	routes.RegisterUserRoutes(r, userHandler)
+
+	// Inject config secret into middleware (global secret)
+	middleware.InitJWTSecret(cfg.JWT.Secret)
+
+	// Register routes
+	routes.RegisterRoutes(r, urlHandler, userHandler)
 
 	// Start server
 	log.Printf("🚀 Server running on port %s", cfg.Server.Port)
