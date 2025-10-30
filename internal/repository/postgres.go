@@ -3,9 +3,12 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/url"
 	"time"
+
+	"github.com/brij-812/url-shortener/internal/cache"
 )
 
 // PostgresRepo stores data in Postgres instead of memory.
@@ -61,6 +64,14 @@ func (r *PostgresRepo) GetCode(u string) (string, bool) {
 
 // GetURL finds the original long URL for a given code (public)
 func (r *PostgresRepo) GetURL(code string) (string, bool) {
+	cacheKey := "shorturl:" + code
+
+	// 1️⃣ check Redis cache first
+	if cached, ok := cache.Get(cacheKey); ok {
+		return cached, true
+	}
+
+	// 2️⃣ fallback to Postgres
 	var u string
 	err := r.db.QueryRow(`SELECT long_url FROM links WHERE code=$1`, code).Scan(&u)
 	if err == sql.ErrNoRows {
@@ -70,11 +81,26 @@ func (r *PostgresRepo) GetURL(code string) (string, bool) {
 		log.Printf("❌ GetURL error: %v", err)
 		return "", false
 	}
+
+	// 3️⃣ cache result in Redis (24h TTL)
+	cache.Set(cacheKey, u, 24*time.Hour)
+
 	return u, true
 }
 
 // GetTopDomains returns top N most frequently saved domains
 func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
+	cacheKey := "metrics:topdomains"
+
+	// 1️⃣ Try Redis cache
+	if cachedJSON, ok := cache.Get(cacheKey); ok {
+		out := make(map[string]int)
+		if err := json.Unmarshal([]byte(cachedJSON), &out); err == nil {
+			return out
+		}
+	}
+
+	// 2️⃣ Query DB if cache miss
 	rows, err := r.db.Query(`
 		SELECT domain, count FROM domain_counts
 		ORDER BY count DESC
@@ -94,6 +120,11 @@ func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
 			out[domain] = count
 		}
 	}
+
+	// 3️⃣ Save to Redis for 10 minutes
+	data, _ := json.Marshal(out)
+	cache.Set(cacheKey, string(data), 10*time.Minute)
+
 	return out
 }
 

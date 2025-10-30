@@ -18,9 +18,6 @@ func RegisterRoutes(r chi.Router, urlHandler *handlers.URLHandler, userHandler *
 	r.Post("/signup", userHandler.Signup)
 	r.Post("/login", userHandler.Login)
 
-	// 🔹 Public redirect route (anyone can use short link)
-	r.Get("/{shortCode}", urlHandler.RedirectURL)
-
 	// Protected routes (require valid JWT)
 	r.Group(func(protected chi.Router) {
 		protected.Use(middleware.JWTAuth)
@@ -28,4 +25,7 @@ func RegisterRoutes(r chi.Router, urlHandler *handlers.URLHandler, userHandler *
 		protected.Get("/metrics", urlHandler.GetMetrics)
 		protected.Get("/all", urlHandler.GetAllUserURLs)
 	})
+
+	// Redirect route (no auth)
+	r.Get("/{shortCode}", urlHandler.RedirectURL)
 }
