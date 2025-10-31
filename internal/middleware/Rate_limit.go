@@ -10,39 +10,46 @@ import (
 	"github.com/brij-812/url-shortener/internal/cache"
 )
 
+// window length and limits
 const (
+	windowSecs = 60
 	userLimit  = 10
 	ipLimit    = 30
-	windowSecs = 60
 )
 
-// RateLimit middleware controls request frequency per user/IP.
 func RateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var key string
+		now := time.Now().Unix()
+		window := now / windowSecs
 
-		// Extract user ID if logged in
 		userID := r.Context().Value("user_id")
+		var keyBase string
 		if userID != nil {
-			key = fmt.Sprintf("rate:user:%v", userID)
+			keyBase = fmt.Sprintf("rate:user:%v", userID)
 		} else {
-			ip := clientIP(r)
-			key = fmt.Sprintf("rate:ip:%s", ip)
+			keyBase = fmt.Sprintf("rate:ip:%s", clientIP(r))
 		}
 
-		count, _ := cache.Client().Incr(r.Context(), key).Result()
+		currKey := fmt.Sprintf("%s:%d", keyBase, window)
+		prevKey := fmt.Sprintf("%s:%d", keyBase, window-1)
 
-		if count == 1 {
-			// first hit — set expiration window
-			cache.Client().Expire(r.Context(), key, time.Duration(windowSecs)*time.Second)
-		}
+		pipe := cache.Client().TxPipeline()
+		currCount := pipe.Incr(r.Context(), currKey)
+		pipe.Expire(r.Context(), currKey, time.Duration(windowSecs*2)*time.Second)
+		_, _ = pipe.Exec(r.Context())
+
+		prevVal, _ := cache.Client().Get(r.Context(), prevKey).Int64()
+		currVal := currCount.Val()
+
+		elapsed := float64(now%windowSecs) / float64(windowSecs)
+		blended := float64(prevVal)*(1.0-elapsed) + float64(currVal)
 
 		limit := userLimit
 		if userID == nil {
 			limit = ipLimit
 		}
 
-		if count > int64(limit) {
+		if blended > float64(limit) {
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte("Rate limit exceeded. Try again later."))
 			return
@@ -52,7 +59,7 @@ func RateLimit(next http.Handler) http.Handler {
 	})
 }
 
-// clientIP extracts IP from request.
+// clientIP extracts the real client IP.
 func clientIP(r *http.Request) string {
 	ip := r.Header.Get("X-Forwarded-For")
 	if ip != "" {
