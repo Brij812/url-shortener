@@ -9,6 +9,7 @@ dist/
 *.test
 *.out
 *.log
+dump.rdb
 
 # === Go Modules Cache ===
 vendor/

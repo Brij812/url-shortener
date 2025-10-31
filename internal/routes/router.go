@@ -21,11 +21,13 @@ func RegisterRoutes(r chi.Router, urlHandler *handlers.URLHandler, userHandler *
 	// Protected routes (require valid JWT)
 	r.Group(func(protected chi.Router) {
 		protected.Use(middleware.JWTAuth)
+		protected.Use(middleware.RateLimit) // 🔹 apply Redis rate limiter here
+
 		protected.Post("/shorten", urlHandler.ShortenURL)
 		protected.Get("/metrics", urlHandler.GetMetrics)
 		protected.Get("/all", urlHandler.GetAllUserURLs)
 	})
 
-	// Redirect route (no auth)
+	// Public redirect (no auth or rate limit yet)
 	r.Get("/{shortCode}", urlHandler.RedirectURL)
 }

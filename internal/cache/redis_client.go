@@ -27,6 +27,11 @@ func InitRedis(addr, password string, db int) {
 	log.Println("✅ Connected to Redis")
 }
 
+// ✅ new getter used by middlewares
+func Client() *redis.Client {
+	return Rdb
+}
+
 // Helper functions
 func Set(key string, value string, ttl time.Duration) {
 	if err := Rdb.Set(Ctx, key, value, ttl).Err(); err != nil {
