@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/brij-812/url-shortener/internal/cache"
 )
 
-// window length and limits
 const (
 	windowSecs = 60
 	userLimit  = 10
@@ -33,6 +33,7 @@ func RateLimit(next http.Handler) http.Handler {
 		currKey := fmt.Sprintf("%s:%d", keyBase, window)
 		prevKey := fmt.Sprintf("%s:%d", keyBase, window-1)
 
+		// increment current counter
 		pipe := cache.Client().TxPipeline()
 		currCount := pipe.Incr(r.Context(), currKey)
 		pipe.Expire(r.Context(), currKey, time.Duration(windowSecs*2)*time.Second)
@@ -49,9 +50,17 @@ func RateLimit(next http.Handler) http.Handler {
 			limit = ipLimit
 		}
 
+		remaining := int64(math.Max(0, float64(limit)-blended))
+		resetIn := windowSecs - int(now%windowSecs)
+
+		// 🔹 Standard Rate-Limit headers (like GitHub)
+		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", limit))
+		w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetIn))
+
 		if blended > float64(limit) {
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte("Rate limit exceeded. Try again later."))
+			w.Write([]byte(fmt.Sprintf("Rate limit exceeded. Try again in %d seconds.", resetIn)))
 			return
 		}
 
@@ -59,7 +68,6 @@ func RateLimit(next http.Handler) http.Handler {
 	})
 }
 
-// clientIP extracts the real client IP.
 func clientIP(r *http.Request) string {
 	ip := r.Header.Get("X-Forwarded-For")
 	if ip != "" {
