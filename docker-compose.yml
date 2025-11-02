@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: shorty-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: shorty_user
+      POSTGRES_PASSWORD: Brij@8123
+      POSTGRES_DB: shorty
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shorty_user -d shorty"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: shorty-redis
+    restart: always
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+
+  url-shortener:
+    build: .
+    container_name: url-shortener
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      - GO_ENV=production
+
+volumes:
+  pgdata:
+  redisdata:

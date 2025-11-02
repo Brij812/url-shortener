@@ -50,3 +50,16 @@ func Get(key string) (string, bool) {
 	}
 	return val, true
 }
+
+// Delete removes a key from Redis
+func Delete(key string) {
+	ctx := context.Background()
+	if Rdb == nil {
+		log.Println("⚠️ Redis not initialized — cannot delete key:", key)
+		return
+	}
+
+	if err := Rdb.Del(ctx, key).Err(); err != nil {
+		log.Printf("❌ Failed to delete cache key %s: %v", key, err)
+	}
+}

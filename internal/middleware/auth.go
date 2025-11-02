@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -54,7 +55,23 @@ func JWTAuth(next http.Handler) http.Handler {
 			}
 		}
 
-		ctx := context.WithValue(r.Context(), "user_id", claims["user_id"])
+		// ✅ Normalize user_id type (critical fix)
+		var userID int
+		switch v := claims["user_id"].(type) {
+		case float64:
+			userID = int(v)
+		case int:
+			userID = v
+		default:
+			http.Error(w, "invalid user_id in token", http.StatusUnauthorized)
+			return
+		}
+
+		// 🧩 Optional debug log (safe to keep for tracing)
+		log.Printf("✅ Authenticated request by user_id=%d", userID)
+
+		// ✅ Inject clean int user_id into context
+		ctx := context.WithValue(r.Context(), "user_id", userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

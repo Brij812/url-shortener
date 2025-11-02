@@ -2,22 +2,22 @@ server:
   port: "8080"
 
 database:
-  host: "localhost"
+  host: "postgres"         
   port: "5432"
   user: "shorty_user"
-  password: "Brij@8123"   # <- set your real password
+  password: "Brij@8123"
   name: "shorty"
-  sslmode: "disable"      # local dev on Windows/macOS usually uses disable
+  sslmode: "disable"
 
 redis:
-  host: "localhost"
+  host: "redis"            
   port: "6379"
-  password: ""            # leave empty if no password
+  password: ""
   db: 0
   pool_size: 10
 
 jwt:
-  secret: "supersecretkey_change_me"  # move to ENV in prod
+  secret: "supersecretkey_change_me"
   issuer: "url-shortener"
-  access_token_expiry_minutes: 60     # 1 hour access token
-  refresh_token_expiry_hours: 168     # 7 days (if/when you add refresh tokens)
+  access_token_expiry_minutes: 60
+  refresh_token_expiry_hours: 168

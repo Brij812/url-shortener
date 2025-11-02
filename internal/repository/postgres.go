@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/brij-812/url-shortener/internal/cache"
@@ -21,6 +22,19 @@ func NewPostgresRepo(db *sql.DB) *PostgresRepo {
 	return &PostgresRepo{db: db}
 }
 
+// 🧩 Extracts clean domain (removes www.)
+func extractDomain(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	if strings.HasPrefix(host, "www.") {
+		host = strings.TrimPrefix(host, "www.")
+	}
+	return host
+}
+
 // Save inserts a new URL–code pair associated with a user.
 func (r *PostgresRepo) Save(u, code string, userID int) {
 	_, err := r.db.ExecContext(context.Background(), `
@@ -34,18 +48,21 @@ func (r *PostgresRepo) Save(u, code string, userID int) {
 	}
 
 	// Increment domain count
-	d, err := url.Parse(u)
-	if err == nil && d.Host != "" {
+	domain := extractDomain(u)
+	if domain != "" {
 		_, err = r.db.ExecContext(context.Background(), `
 			INSERT INTO domain_counts (domain, count)
 			VALUES ($1, 1)
 			ON CONFLICT (domain)
 			DO UPDATE SET count = domain_counts.count + 1
-		`, d.Host)
+		`, domain)
 		if err != nil {
 			log.Printf("❌ Failed to update domain count: %v", err)
 		}
 	}
+
+	// 🧹 Invalidate cached metrics
+	cache.Delete("metrics:topdomains")
 }
 
 // GetCode finds the short code for a given long URL
@@ -108,7 +125,7 @@ func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
 	`, n)
 	if err != nil {
 		log.Printf("❌ GetTopDomains error: %v", err)
-		return nil
+		return map[string]int{}
 	}
 	defer rows.Close()
 
@@ -130,19 +147,22 @@ func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
 
 // IncrementDomainCount increases count for a given domain
 func (r *PostgresRepo) IncrementDomainCount(u string) {
-	d, err := url.Parse(u)
-	if err != nil || d.Host == "" {
+	domain := extractDomain(u)
+	if domain == "" {
 		return
 	}
-	_, err = r.db.Exec(`
+	_, err := r.db.Exec(`
 		INSERT INTO domain_counts (domain, count)
 		VALUES ($1, 1)
 		ON CONFLICT (domain)
 		DO UPDATE SET count = domain_counts.count + 1
-	`, d.Host)
+	`, domain)
 	if err != nil {
 		log.Printf("❌ IncrementDomainCount error: %v", err)
 	}
+
+	// 🧹 Invalidate cached metrics
+	cache.Delete("metrics:topdomains")
 }
 
 // GetAllURLsByUser returns all shortened URLs for a given user

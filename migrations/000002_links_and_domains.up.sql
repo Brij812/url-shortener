@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS links (
+    id SERIAL PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    long_url TEXT NOT NULL,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS domain_counts (
+    domain TEXT PRIMARY KEY,
+    count INT DEFAULT 1
+);
