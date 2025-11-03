@@ -40,7 +40,7 @@ func TestDomainCount(t *testing.T) {
 		r.Save("https://b.com", "b", userID)
 	}
 
-	top := r.GetTopDomains(3)
+	top := r.GetTopDomains(userID, 3)
 	if top["a.com"] != 3 || top["b.com"] != 2 {
 		t.Fatalf("unexpected domain counts %v", top)
 	}

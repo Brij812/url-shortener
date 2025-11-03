@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"net/url"
 	"sync"
 	"time"
 )
@@ -10,7 +9,7 @@ type MemoryRepo struct {
 	mu           sync.RWMutex
 	urlToCode    map[string]string
 	codeToURL    map[string]string
-	domainCounts map[string]int
+	domainCounts map[int]map[string]int // per-user domain counts
 	userLinks    map[int][]map[string]string
 }
 
@@ -18,7 +17,7 @@ func NewMemoryRepo() *MemoryRepo {
 	return &MemoryRepo{
 		urlToCode:    make(map[string]string),
 		codeToURL:    make(map[string]string),
-		domainCounts: make(map[string]int),
+		domainCounts: make(map[int]map[string]int),
 		userLinks:    make(map[int][]map[string]string),
 	}
 }
@@ -31,6 +30,10 @@ func (r *MemoryRepo) Save(u, code string, userID int) {
 	r.urlToCode[u] = code
 	r.codeToURL[code] = u
 
+	if _, ok := r.domainCounts[userID]; !ok {
+		r.domainCounts[userID] = make(map[string]int)
+	}
+
 	// Track per-user links
 	r.userLinks[userID] = append(r.userLinks[userID], map[string]string{
 		"short_url":  "http://localhost:8080/" + code,
@@ -38,10 +41,10 @@ func (r *MemoryRepo) Save(u, code string, userID int) {
 		"created_at": time.Now().Format(time.RFC3339),
 	})
 
-	// Increment domain count
-	d, err := url.Parse(u)
-	if err == nil && d.Host != "" {
-		r.domainCounts[d.Host]++
+	// Increment domain count per user
+	domain := extractDomain(u)
+	if domain != "" {
+		r.domainCounts[userID][domain]++
 	}
 }
 
@@ -59,22 +62,33 @@ func (r *MemoryRepo) GetURL(code string) (string, bool) {
 	return u, ok
 }
 
-func (r *MemoryRepo) GetTopDomains(n int) map[string]int {
+// GetTopDomains — per-user
+func (r *MemoryRepo) GetTopDomains(userID, n int) map[string]int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.domainCounts
+
+	if domains, ok := r.domainCounts[userID]; ok {
+		return domains
+	}
+	return map[string]int{}
 }
 
-func (r *MemoryRepo) IncrementDomainCount(u string) {
+// IncrementDomainCount — per-user
+func (r *MemoryRepo) IncrementDomainCount(u string, userID int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d, err := url.Parse(u)
-	if err == nil && d.Host != "" {
-		r.domainCounts[d.Host]++
+
+	if _, ok := r.domainCounts[userID]; !ok {
+		r.domainCounts[userID] = make(map[string]int)
+	}
+
+	domain := extractDomain(u)
+	if domain != "" {
+		r.domainCounts[userID][domain]++
 	}
 }
 
-// new method added — satisfies Repository interface
+// GetAllURLsByUser — unchanged
 func (r *MemoryRepo) GetAllURLsByUser(userID int) []map[string]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

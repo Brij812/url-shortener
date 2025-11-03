@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"strings"
@@ -47,22 +48,26 @@ func (r *PostgresRepo) Save(u, code string, userID int) {
 		return
 	}
 
-	// Increment domain count
+	// Increment domain count (user-specific)
 	domain := extractDomain(u)
+	log.Printf("🧩 Extracted domain for %s = '%s'", u, domain)
 	if domain != "" {
+		log.Printf("🧠 DEBUG: Save() called for URL=%s userID=%d domain=%s", u, userID, domain)
 		_, err = r.db.ExecContext(context.Background(), `
-			INSERT INTO domain_counts (domain, count)
-			VALUES ($1, 1)
-			ON CONFLICT (domain)
-			DO UPDATE SET count = domain_counts.count + 1
-		`, domain)
+        INSERT INTO domain_counts (domain, user_id, count)
+        VALUES ($1, $2, 1)
+        ON CONFLICT (domain, user_id)
+        DO UPDATE SET count = domain_counts.count + 1
+    `, domain, userID)
 		if err != nil {
-			log.Printf("❌ Failed to update domain count: %v", err)
+			log.Printf("❌ INSERT domain_counts failed: %v", err)
+		} else {
+			log.Printf("✅ INSERT domain_counts succeeded for domain=%s userID=%d", domain, userID)
 		}
 	}
 
-	// 🧹 Invalidate cached metrics
-	cache.Delete("metrics:topdomains")
+	// 🧹 Invalidate cached metrics for this user
+	cache.Delete(fmt.Sprintf("metrics:topdomains:%d", userID))
 }
 
 // GetCode finds the short code for a given long URL
@@ -105,9 +110,9 @@ func (r *PostgresRepo) GetURL(code string) (string, bool) {
 	return u, true
 }
 
-// GetTopDomains returns top N most frequently saved domains
-func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
-	cacheKey := "metrics:topdomains"
+// GetTopDomains returns top N most frequently saved domains for a specific user
+func (r *PostgresRepo) GetTopDomains(userID, n int) map[string]int {
+	cacheKey := fmt.Sprintf("metrics:topdomains:%d", userID)
 
 	// 1️⃣ Try Redis cache
 	if cachedJSON, ok := cache.Get(cacheKey); ok {
@@ -120,9 +125,10 @@ func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
 	// 2️⃣ Query DB if cache miss
 	rows, err := r.db.Query(`
 		SELECT domain, count FROM domain_counts
+		WHERE user_id = $1
 		ORDER BY count DESC
-		LIMIT $1
-	`, n)
+		LIMIT $2
+	`, userID, n)
 	if err != nil {
 		log.Printf("❌ GetTopDomains error: %v", err)
 		return map[string]int{}
@@ -145,24 +151,23 @@ func (r *PostgresRepo) GetTopDomains(n int) map[string]int {
 	return out
 }
 
-// IncrementDomainCount increases count for a given domain
-func (r *PostgresRepo) IncrementDomainCount(u string) {
+// IncrementDomainCount increases count for a given domain (user-specific)
+func (r *PostgresRepo) IncrementDomainCount(u string, userID int) {
 	domain := extractDomain(u)
 	if domain == "" {
 		return
 	}
 	_, err := r.db.Exec(`
-		INSERT INTO domain_counts (domain, count)
-		VALUES ($1, 1)
-		ON CONFLICT (domain)
+		INSERT INTO domain_counts (domain, user_id, count)
+		VALUES ($1, $2, 1)
+		ON CONFLICT (domain, user_id)
 		DO UPDATE SET count = domain_counts.count + 1
-	`, domain)
+	`, domain, userID)
 	if err != nil {
 		log.Printf("❌ IncrementDomainCount error: %v", err)
 	}
 
-	// 🧹 Invalidate cached metrics
-	cache.Delete("metrics:topdomains")
+	cache.Delete(fmt.Sprintf("metrics:topdomains:%d", userID))
 }
 
 // GetAllURLsByUser returns all shortened URLs for a given user

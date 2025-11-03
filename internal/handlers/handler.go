@@ -45,19 +45,18 @@ func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.URL = normalizeURL(req.URL)
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	code, exists := h.Repo.GetCode(req.URL)
 	if !exists {
 		code = utils.GenerateShortCode(req.URL)
-		// ✅ get user ID from JWT context
-		userID, ok := r.Context().Value("user_id").(int)
-		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		h.Repo.Save(req.URL, code, userID)
 	} else {
-		h.Repo.IncrementDomainCount(req.URL)
+		h.Repo.IncrementDomainCount(req.URL, userID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -80,12 +79,18 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, longURL, http.StatusFound) // 302 redirect
+	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
-// 🔹 Metrics (Protected)
+// 🔹 Metrics (Protected, per user)
 func (h *URLHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
-	data := h.Repo.GetTopDomains(3)
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	data := h.Repo.GetTopDomains(userID, 3)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
 }
