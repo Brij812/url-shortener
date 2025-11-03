@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/brij-812/url-shortener/internal/models"
 	"github.com/brij-812/url-shortener/internal/repository"
@@ -51,17 +52,26 @@ func (h *URLHandler) ShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 🕓 Handle optional expiry_days
+	var expiresAt *time.Time
+	if req.ExpiryDays > 0 {
+		t := time.Now().Add(time.Duration(req.ExpiryDays) * 24 * time.Hour)
+		expiresAt = &t
+	}
+
 	code, exists := h.Repo.GetCode(req.URL)
 	if !exists {
 		code = utils.GenerateShortCode(req.URL)
-		h.Repo.Save(req.URL, code, userID)
+		// New Save signature includes expiry
+		h.Repo.Save(req.URL, code, userID, expiresAt)
 	} else {
 		h.Repo.IncrementDomainCount(req.URL, userID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models.ShortenResponse{
-		ShortURL: "http://localhost:8080/" + code,
+		ShortURL:  "http://localhost:8080/" + code,
+		ExpiresAt: expiresAt,
 	})
 }
 
@@ -75,7 +85,8 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 
 	longURL, exists := h.Repo.GetURL(shortCode)
 	if !exists {
-		http.Error(w, "short URL not found", http.StatusNotFound)
+		// Could be expired or not found
+		http.Error(w, "short URL expired or not found", http.StatusGone)
 		return
 	}
 

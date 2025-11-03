@@ -37,12 +37,13 @@ func extractDomain(rawURL string) string {
 }
 
 // Save inserts a new URL–code pair associated with a user.
-func (r *PostgresRepo) Save(u, code string, userID int) {
+// Supports optional expiry (TTL). If expiresAt is nil, link never expires.
+func (r *PostgresRepo) Save(u, code string, userID int, expiresAt *time.Time) {
 	_, err := r.db.ExecContext(context.Background(), `
-		INSERT INTO links (code, long_url, user_id, created_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO links (code, long_url, user_id, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (code) DO NOTHING
-	`, code, u, userID, time.Now())
+	`, code, u, userID, time.Now(), expiresAt)
 	if err != nil {
 		log.Printf("❌ Failed to save URL: %v", err)
 		return
@@ -54,11 +55,11 @@ func (r *PostgresRepo) Save(u, code string, userID int) {
 	if domain != "" {
 		log.Printf("🧠 DEBUG: Save() called for URL=%s userID=%d domain=%s", u, userID, domain)
 		_, err = r.db.ExecContext(context.Background(), `
-        INSERT INTO domain_counts (domain, user_id, count)
-        VALUES ($1, $2, 1)
-        ON CONFLICT (domain, user_id)
-        DO UPDATE SET count = domain_counts.count + 1
-    `, domain, userID)
+			INSERT INTO domain_counts (domain, user_id, count)
+			VALUES ($1, $2, 1)
+			ON CONFLICT (domain, user_id)
+			DO UPDATE SET count = domain_counts.count + 1
+		`, domain, userID)
 		if err != nil {
 			log.Printf("❌ INSERT domain_counts failed: %v", err)
 		} else {
@@ -84,7 +85,8 @@ func (r *PostgresRepo) GetCode(u string) (string, bool) {
 	return code, true
 }
 
-// GetURL finds the original long URL for a given code (public)
+// GetURL finds the original long URL for a given code (public).
+// Automatically skips expired links.
 func (r *PostgresRepo) GetURL(code string) (string, bool) {
 	cacheKey := "shorturl:" + code
 
@@ -95,7 +97,13 @@ func (r *PostgresRepo) GetURL(code string) (string, bool) {
 
 	// 2️⃣ fallback to Postgres
 	var u string
-	err := r.db.QueryRow(`SELECT long_url FROM links WHERE code=$1`, code).Scan(&u)
+	var expiresAt sql.NullTime
+	err := r.db.QueryRow(`
+		SELECT long_url, expires_at
+		FROM links
+		WHERE code = $1
+	`, code).Scan(&u, &expiresAt)
+
 	if err == sql.ErrNoRows {
 		return "", false
 	}
@@ -104,8 +112,21 @@ func (r *PostgresRepo) GetURL(code string) (string, bool) {
 		return "", false
 	}
 
-	// 3️⃣ cache result in Redis (24h TTL)
-	cache.Set(cacheKey, u, 24*time.Hour)
+	// 🕓 Check expiry
+	if expiresAt.Valid && time.Now().After(expiresAt.Time) {
+		log.Printf("⚰️ Link %s expired at %v", code, expiresAt.Time)
+		return "", false
+	}
+
+	// 3️⃣ cache result in Redis (set TTL to min(24h, remaining validity))
+	ttl := 24 * time.Hour
+	if expiresAt.Valid {
+		remaining := time.Until(expiresAt.Time)
+		if remaining > 0 && remaining < ttl {
+			ttl = remaining
+		}
+	}
+	cache.Set(cacheKey, u, ttl)
 
 	return u, true
 }
@@ -173,7 +194,7 @@ func (r *PostgresRepo) IncrementDomainCount(u string, userID int) {
 // GetAllURLsByUser returns all shortened URLs for a given user
 func (r *PostgresRepo) GetAllURLsByUser(userID int) []map[string]string {
 	rows, err := r.db.Query(`
-		SELECT code, long_url, created_at
+		SELECT code, long_url, created_at, expires_at
 		FROM links
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -188,13 +209,34 @@ func (r *PostgresRepo) GetAllURLsByUser(userID int) []map[string]string {
 	for rows.Next() {
 		var code, longURL string
 		var createdAt time.Time
-		if err := rows.Scan(&code, &longURL, &createdAt); err == nil {
+		var expiresAt sql.NullTime
+		if err := rows.Scan(&code, &longURL, &createdAt, &expiresAt); err == nil {
+			expiry := ""
+			if expiresAt.Valid {
+				expiry = expiresAt.Time.Format(time.RFC3339)
+			}
 			results = append(results, map[string]string{
 				"short_url":  "http://localhost:8080/" + code,
 				"long_url":   longURL,
 				"created_at": createdAt.Format(time.RFC3339),
+				"expires_at": expiry,
 			})
 		}
 	}
 	return results
+}
+
+// 🧹 Optional: CleanupExpiredLinks removes expired links from DB & cache.
+func (r *PostgresRepo) CleanupExpiredLinks() {
+	ctx := context.Background()
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM links
+		WHERE expires_at IS NOT NULL AND expires_at < NOW()
+	`)
+	if err != nil {
+		log.Printf("❌ CleanupExpiredLinks error: %v", err)
+		return
+	}
+	rows, _ := res.RowsAffected()
+	log.Printf("🧹 CleanupExpiredLinks removed %d expired links", rows)
 }

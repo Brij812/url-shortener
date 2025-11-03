@@ -23,7 +23,7 @@ func NewMemoryRepo() *MemoryRepo {
 }
 
 // Save a URL–code pair associated with a user
-func (r *MemoryRepo) Save(u, code string, userID int) {
+func (r *MemoryRepo) Save(u, code string, userID int, expiresAt *time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
