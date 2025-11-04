@@ -124,3 +124,25 @@ func (h *URLHandler) GetAllUserURLs(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(urls)
 }
+
+func (h *URLHandler) DeleteURL(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		http.Error(w, "missing short code", http.StatusBadRequest)
+		return
+	}
+
+	if ok := h.Repo.DeleteLink(userID, code); !ok {
+		http.Error(w, "link not found or unauthorized", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "link deleted successfully"})
+}

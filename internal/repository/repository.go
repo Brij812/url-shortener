@@ -9,4 +9,5 @@ type Repository interface {
 	GetTopDomains(userID, n int) map[string]int
 	IncrementDomainCount(u string, userID int)
 	GetAllURLsByUser(userID int) []map[string]string
+	DeleteLink(userID int, code string) bool
 }

@@ -240,3 +240,24 @@ func (r *PostgresRepo) CleanupExpiredLinks() {
 	rows, _ := res.RowsAffected()
 	log.Printf("🧹 CleanupExpiredLinks removed %d expired links", rows)
 }
+
+func (r *PostgresRepo) DeleteLink(userID int, code string) bool {
+	res, err := r.db.Exec(`
+		DELETE FROM links
+		WHERE code = $1 AND user_id = $2
+	`, code, userID)
+	if err != nil {
+		log.Printf("❌ DeleteLink error: %v", err)
+		return false
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return false
+	}
+
+	cache.Delete("shorturl:" + code)
+	cache.Delete(fmt.Sprintf("metrics:topdomains:%d", userID))
+
+	return true
+}

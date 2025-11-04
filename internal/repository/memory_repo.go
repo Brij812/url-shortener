@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -9,7 +10,7 @@ type MemoryRepo struct {
 	mu           sync.RWMutex
 	urlToCode    map[string]string
 	codeToURL    map[string]string
-	domainCounts map[int]map[string]int // per-user domain counts
+	domainCounts map[int]map[string]int
 	userLinks    map[int][]map[string]string
 }
 
@@ -93,4 +94,40 @@ func (r *MemoryRepo) GetAllURLsByUser(userID int) []map[string]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.userLinks[userID]
+}
+
+func (r *MemoryRepo) DeleteLink(userID int, code string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// find the long URL associated with the code
+	u, ok := r.codeToURL[code]
+	if !ok {
+		return false
+	}
+
+	// remove from main maps
+	delete(r.codeToURL, code)
+	delete(r.urlToCode, u)
+
+	// remove from user's links slice
+	links := r.userLinks[userID]
+	newLinks := make([]map[string]string, 0, len(links))
+	for _, link := range links {
+		if !strings.HasSuffix(link["short_url"], "/"+code) {
+			newLinks = append(newLinks, link)
+		}
+	}
+	r.userLinks[userID] = newLinks
+
+	// decrement domain count if applicable
+	domain := extractDomain(u)
+	if domain != "" && r.domainCounts[userID][domain] > 0 {
+		r.domainCounts[userID][domain]--
+		if r.domainCounts[userID][domain] == 0 {
+			delete(r.domainCounts[userID], domain)
+		}
+	}
+
+	return true
 }
