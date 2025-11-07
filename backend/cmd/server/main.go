@@ -13,6 +13,7 @@ import (
 	"github.com/brij-812/HyperLinkOS/internal/middleware"
 	"github.com/brij-812/HyperLinkOS/internal/repository"
 	"github.com/brij-812/HyperLinkOS/internal/routes"
+
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
 )
@@ -37,13 +38,13 @@ func connectWithRetry(dsn string, retries int) (*sql.DB, error) {
 }
 
 func main() {
-	// 🔹 Load configuration
+	// Load config
 	cfg := config.LoadConfig()
 
-	// 🔹 Initialize JWT secret for middleware (critical!)
+	// Initialize JWT secret for middleware
 	middleware.InitJWTSecret(cfg.JWT.Secret)
 
-	// 🔹 Build DSN
+	// Build DSN
 	dsn := "host=" + cfg.Database.Host +
 		" port=" + cfg.Database.Port +
 		" user=" + cfg.Database.User +
@@ -51,21 +52,21 @@ func main() {
 		" dbname=" + cfg.Database.Name +
 		" sslmode=" + cfg.Database.SSLMode
 
-	// 🔹 Connect to Postgres with retry logic
+	// Connect to DB
 	db, err := connectWithRetry(dsn, 10)
 	if err != nil {
-		log.Fatalf("❌ DB connection failed after retries: %v", err)
+		log.Fatalf("❌ DB connection failed: %v", err)
 	}
 	defer db.Close()
 
-	// ✅ Run migrations automatically
+	// Run migrations
 	database.RunMigrations(db, cfg, "up")
 
-	// 🔹 Initialize Redis
+	// Init Redis
 	redisAddr := cfg.Redis.Host + ":" + cfg.Redis.Port
 	cache.InitRedis(redisAddr, cfg.Redis.Password, cfg.Redis.DB)
 
-	// 🔹 Initialize repository and handlers
+	// Handlers
 	repo := repository.NewPostgresRepo(db)
 	urlHandler := handlers.NewURLHandler(repo)
 	userHandler := handlers.NewUserHandler(
@@ -75,11 +76,21 @@ func main() {
 		cfg.JWT.AccessTokenExpiryMinutes,
 	)
 
-	// 🔹 Setup router
+	// Router
 	r := chi.NewRouter()
+
+	// ✅ USE YOUR EXISTING CORS MIDDLEWARE HERE
+	r.Use(middleware.CORS)
+
+	// ✅ Allow OPTIONS for preflight
+	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Register routes
 	routes.RegisterRoutes(r, urlHandler, userHandler)
 
-	// 🔹 Start server
+	// Start server
 	log.Printf("🚀 Server running on :%s", cfg.Server.Port)
 	log.Fatal(http.ListenAndServe(":"+cfg.Server.Port, r))
 }
