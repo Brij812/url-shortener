@@ -13,7 +13,7 @@ export function UrlList({ urls }: { urls: any[] }) {
         <Card key={u.id} className="p-4 border">
           <div className="flex justify-between items-center">
             <div>
-              <p className="font-medium">{u.long_url}</p>
+              <p className="font-medium">{u.URL}</p>
               <p className="text-sm text-gray-500">{u.code}</p>
             </div>
 
