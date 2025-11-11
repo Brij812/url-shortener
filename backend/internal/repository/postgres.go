@@ -242,12 +242,32 @@ func (r *PostgresRepo) CleanupExpiredLinks() {
 }
 
 func (r *PostgresRepo) DeleteLink(userID int, code string) bool {
-	res, err := r.db.Exec(`
-		DELETE FROM links
-		WHERE code = $1 AND user_id = $2
-	`, code, userID)
+	ctx := context.Background()
+
+	// 1️⃣ Find the long URL before deleting
+	var longURL string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT long_url FROM links WHERE code = $1 AND user_id = $2`,
+		code, userID,
+	).Scan(&longURL)
+	if err == sql.ErrNoRows {
+		return false
+	}
 	if err != nil {
-		log.Printf("❌ DeleteLink error: %v", err)
+		log.Printf("❌ DeleteLink select error: %v", err)
+		return false
+	}
+
+	// Normalize domain (same logic used in Save)
+	domain := extractDomain(longURL)
+
+	// 2️⃣ Delete the actual link
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM links WHERE code = $1 AND user_id = $2`,
+		code, userID,
+	)
+	if err != nil {
+		log.Printf("❌ DeleteLink delete error: %v", err)
 		return false
 	}
 
@@ -256,8 +276,44 @@ func (r *PostgresRepo) DeleteLink(userID int, code string) bool {
 		return false
 	}
 
+	// 3️⃣ Adjust domain_counts cleanly
+	if domain != "" {
+		var remaining int
+		err = r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) 
+			FROM links 
+			WHERE user_id = $1 AND POSITION($2 IN long_url) > 0
+		`, userID, domain).Scan(&remaining)
+		if err != nil {
+			log.Printf("❌ DeleteLink domain count check error: %v", err)
+		}
+
+		if remaining > 0 {
+			// Decrement safely
+			_, err = r.db.ExecContext(ctx, `
+				UPDATE domain_counts 
+				SET count = GREATEST(count - 1, 0)
+				WHERE user_id = $1 AND domain = $2
+			`, userID, domain)
+			if err != nil {
+				log.Printf("❌ DeleteLink domain decrement error: %v", err)
+			}
+		} else {
+			// Remove domain entry entirely if no links left
+			_, err = r.db.ExecContext(ctx, `
+				DELETE FROM domain_counts 
+				WHERE user_id = $1 AND domain = $2
+			`, userID, domain)
+			if err != nil {
+				log.Printf("❌ DeleteLink domain_counts delete error: %v", err)
+			}
+		}
+	}
+
+	// 4️⃣ Invalidate caches
 	cache.Delete("shorturl:" + code)
 	cache.Delete(fmt.Sprintf("metrics:topdomains:%d", userID))
 
+	log.Printf("🗑️ Deleted link %s for user %d (domain=%s)", code, userID, domain)
 	return true
 }
