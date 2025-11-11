@@ -12,27 +12,34 @@ import (
 
 var jwtSecret []byte
 
-// InitJWTSecret initializes the global secret from config
+// InitJWTSecret initializes the global JWT secret
 func InitJWTSecret(secret string) {
 	jwtSecret = []byte(secret)
 }
 
-// JWTAuth middleware validates token
+// JWTAuth validates the JWT (from cookie or Authorization header)
 func JWTAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "missing auth header", http.StatusUnauthorized)
-			return
+		var tokenString string
+
+		// 1️⃣ Prefer cookie (browser clients)
+		if cookie, err := r.Cookie("hl_jwt"); err == nil {
+			tokenString = cookie.Value
+		} else {
+			// 2️⃣ Fallback to Authorization header for API tools
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				parts := strings.Split(authHeader, " ")
+				if len(parts) == 2 && parts[0] == "Bearer" {
+					tokenString = parts[1]
+				}
+			}
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "invalid auth header", http.StatusUnauthorized)
+		if tokenString == "" {
+			http.Error(w, "missing auth token", http.StatusUnauthorized)
 			return
 		}
-
-		tokenString := parts[1]
 
 		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 			return jwtSecret, nil
@@ -48,6 +55,7 @@ func JWTAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		// ✅ Check token expiry
 		if exp, ok := claims["exp"].(float64); ok {
 			if int64(exp) < time.Now().Unix() {
 				http.Error(w, "token expired", http.StatusUnauthorized)
@@ -55,7 +63,7 @@ func JWTAuth(next http.Handler) http.Handler {
 			}
 		}
 
-		// ✅ Normalize user_id type (critical fix)
+		// ✅ Extract user_id
 		var userID int
 		switch v := claims["user_id"].(type) {
 		case float64:
@@ -67,10 +75,9 @@ func JWTAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// 🧩 Optional debug log (safe to keep for tracing)
 		log.Printf("✅ Authenticated request by user_id=%d", userID)
 
-		// ✅ Inject clean int user_id into context
+		// ✅ Inject into context
 		ctx := context.WithValue(r.Context(), "user_id", userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

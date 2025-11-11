@@ -27,7 +27,7 @@ func NewUserHandler(db *sql.DB, secret, issuer string, accessExpiry int) *UserHa
 	}
 }
 
-// POST /signup
+// 🔹 POST /signup
 func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	var req models.SignupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -52,7 +52,7 @@ func (h *UserHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("User created successfully"))
 }
 
-// POST /login
+// 🔹 POST /login
 func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -76,12 +76,12 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ✅ Create JWT
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"iss":     h.JWTIssuer,
 		"exp":     time.Now().Add(time.Duration(h.AccessTokenExpiryMin) * time.Minute).Unix(),
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(h.JWTSecret)
 	if err != nil {
@@ -89,5 +89,47 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(models.AuthResponse{Token: tokenString})
+	// ✅ Set cookies (secure + HttpOnly)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "hl_jwt",
+		Value:    tokenString,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   h.AccessTokenExpiryMin * 60,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:   "hl_email",
+		Value:  req.Email,
+		Path:   "/",
+		MaxAge: h.AccessTokenExpiryMin * 60,
+	})
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "login successful",
+	})
+}
+
+// 🔹 POST /logout
+func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Clear cookies by overwriting them with expired ones
+	http.SetCookie(w, &http.Cookie{
+		Name:     "hl_jwt",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:   "hl_email",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Logged out successfully",
+	})
 }

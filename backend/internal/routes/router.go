@@ -18,6 +18,7 @@ func RegisterRoutes(r chi.Router, urlHandler *handlers.URLHandler, userHandler *
 	// 🔹 Public authentication routes
 	r.Post("/signup", userHandler.Signup)
 	r.Post("/login", userHandler.Login)
+	r.Post("/logout", userHandler.Logout)
 
 	// 🔹 Protected APIs (require JWT + RateLimit)
 	r.Group(func(protected chi.Router) {

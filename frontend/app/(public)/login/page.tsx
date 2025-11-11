@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { loginAction } from "./actions";
+import axios from "axios";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 export default function LoginPage() {
   const [error, setError] = useState("");
@@ -19,13 +21,28 @@ export default function LoginPage() {
       return;
     }
 
-    const res = await loginAction({ email, password });
-    if (res?.error) {
-      setError(res.error);
-      toast.error(res.error);
-    } else {
+    try {
+      const res = await axios.post(
+        `${API_BASE}/login`,
+        { email, password },
+        { withCredentials: true, validateStatus: () => true }
+      );
+
+      if (res.status !== 200) {
+        const msg = res.data?.error || "Invalid credentials";
+        toast.error(msg);
+        setError(msg);
+        return;
+      }
+
+      // ✅ Store email cookie manually for Settings page display
+      document.cookie = `hl_email=${encodeURIComponent(email)}; path=/;`;
+
       toast.success("Welcome back!");
       window.location.href = "/dashboard";
+    } catch (err) {
+      console.error("❌ Login error:", err);
+      toast.error("Something went wrong. Try again later.");
     }
   }
 
@@ -35,8 +52,7 @@ export default function LoginPage() {
       <div className="flex-1 bg-[#111827] text-white flex flex-col justify-center items-center p-12">
         <h1 className="text-4xl font-bold mb-4">Welcome Back 👋</h1>
         <p className="text-gray-300 max-w-md text-center">
-          Log in to manage your links, track analytics, and grow your reach —
-          all from one clean dashboard.
+          Log in to manage your links, track analytics, and grow your reach — all from one clean dashboard.
         </p>
       </div>
 
@@ -49,29 +65,13 @@ export default function LoginPage() {
           <h2 className="text-2xl font-semibold text-center">Login</h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Email
-            </label>
-            <Input
-              name="email"
-              type="email"
-              placeholder="you@example.com"
-              className="mt-1"
-              required
-            />
+            <label className="block text-sm font-medium text-gray-700">Email</label>
+            <Input name="email" type="email" placeholder="you@example.com" className="mt-1" required />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <Input
-              name="password"
-              type="password"
-              placeholder="••••••••"
-              className="mt-1"
-              required
-            />
+            <label className="block text-sm font-medium text-gray-700">Password</label>
+            <Input name="password" type="password" placeholder="••••••••" className="mt-1" required />
           </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -85,6 +85,10 @@ export default function LoginPage() {
             <a href="/signup" className="text-blue-600 hover:underline">
               Sign up
             </a>
+          </p>
+
+          <p className="text-center text-sm text-gray-400 mt-2 hover:underline cursor-pointer">
+            Forgot Password?
           </p>
         </form>
       </div>
