@@ -20,16 +20,22 @@ func RegisterRoutes(r chi.Router, urlHandler *handlers.URLHandler, userHandler *
 	r.Post("/login", userHandler.Login)
 	r.Post("/logout", userHandler.Logout)
 
-	// 🔹 Protected APIs (require JWT + RateLimit)
+	// 🔹 Protected APIs (require JWT)
 	r.Group(func(protected chi.Router) {
 		protected.Use(middleware.JWTAuth)
-		protected.Use(middleware.RateLimit)
 
-		protected.Post("/shorten", urlHandler.ShortenURL)
+		// 🧠 Apply rate limiting *only* on /shorten
+		protected.Group(func(limited chi.Router) {
+			limited.Use(middleware.RateLimit)
+			limited.Post("/shorten", urlHandler.ShortenURL)
+		})
+
+		// Normal protected endpoints (no rate limit)
 		protected.Get("/metrics", urlHandler.GetMetrics)
 		protected.Get("/all", urlHandler.GetAllUserURLs)
 		protected.Delete("/url/{code}", urlHandler.DeleteURL)
 	})
 
+	// 🔹 Public redirect route
 	r.Get("/{shortCode:[A-Za-z0-9_-]{4,12}}", urlHandler.RedirectURL)
 }
